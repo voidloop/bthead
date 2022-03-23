@@ -1,15 +1,16 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 
-const int scanTime = 20; // seconds
-NimBLEScan *pBLEScan;
+const int scanTime = 5; // seconds
+NimBLEScan *pBLEScan = nullptr;
 NimBLEAdvertisedDevice *pDevice = nullptr;
+
 
 class MyAdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice *pAdvertisedDevice) override {
         if (pAdvertisedDevice->haveServiceUUID()) {
-            std::string name = pAdvertisedDevice->getName();
-            std::string uuid = pAdvertisedDevice->getServiceUUID().toString();
+            const std::string name = pAdvertisedDevice->getName();
+            const std::string uuid = pAdvertisedDevice->getServiceUUID().toString();
             if (uuid == "0xfff0" && name == "Hello") {
                 Serial.println(pAdvertisedDevice->toString().c_str());
                 pAdvertisedDevice->getScan()->stop();
@@ -28,6 +29,7 @@ class MyClientCallback : public NimBLEClientCallbacks {
     void onDisconnect(NimBLEClient *pClient) override {
         Serial.println("Client disconnected");
         digitalWrite(5, LOW);
+        pDevice = nullptr;
     }
 };
 
@@ -46,7 +48,6 @@ void notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData,
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("Scanning...");
 
     NimBLEDevice::init("");
     pBLEScan = NimBLEDevice::getScan();
@@ -60,8 +61,8 @@ void setup() {
 
 void loop() {
     if (pDevice == nullptr) {
-        NimBLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-        Serial.printf("Devices found: %d\n", foundDevices.getCount());
+        Serial.println("Scanning...");
+        NimBLEScanResults foundDevices = pBLEScan->start(scanTime);
 
         if (pDevice != nullptr) {
             Serial.println("Radio found!");
