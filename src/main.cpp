@@ -48,8 +48,8 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Scanning...");
 
-    BLEDevice::init("");
-    pBLEScan = BLEDevice::getScan();
+    NimBLEDevice::init("");
+    pBLEScan = NimBLEDevice::getScan();
     pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
 
     // active scan uses more power, but get results faster
@@ -60,7 +60,7 @@ void setup() {
 
 void loop() {
     if (pDevice == nullptr) {
-        BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
+        NimBLEScanResults foundDevices = pBLEScan->start(scanTime, false);
         Serial.printf("Devices found: %d\n", foundDevices.getCount());
 
         if (pDevice != nullptr) {
@@ -68,15 +68,15 @@ void loop() {
             Serial.println(pDevice->toString().c_str());
 
             Serial.println("Connecting...");
-            BLEClient *pClient = BLEDevice::createClient();
+            NimBLEClient *pClient = NimBLEDevice::createClient();
             pClient->setClientCallbacks(new MyClientCallback());
             pClient->connect(pDevice);
 
             if (pClient->isConnected()) {
-                BLERemoteService *pRemoteService = pClient->getService(pDevice->getServiceUUID());
+                NimBLERemoteService *pRemoteService = pClient->getService(pDevice->getServiceUUID());
                 Serial.println(pRemoteService->toString().c_str());
 
-                std::vector<BLERemoteCharacteristic *> *pCharacteristics = pRemoteService->getCharacteristics(true);
+                std::vector<NimBLERemoteCharacteristic *> *pCharacteristics = pRemoteService->getCharacteristics(true);
                 for (auto &pCharacteristic: *pCharacteristics) {
                     Serial.println(pCharacteristic->toString().c_str());
                     if (pCharacteristic->getUUID().toString() == "0xfff6") {
