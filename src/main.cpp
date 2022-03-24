@@ -1,17 +1,24 @@
 #include <Arduino.h>
 #include <BLEDevice.h>
 #include <sys/param.h>
-
 #include "opentxbt.h"
 
 const int scanTime = 5; // seconds
 const char *serviceUUID = "0000fff0-0000-1000-8000-00805f9b34fb";
-const char *charUUID = "0000fff6-0000-1000-8000-00805f9b34fb";
+const char *charUUID = "0000fff3-0000-1000-8000-00805f9b34fb";
 
+enum States {
+    SCANNING,
+    CONNECTED,
+    BEFORE_DISCONNECT,
+    DISCONNECTED
+};
+
+States currentState = DISCONNECTED;
 BLEScan *pBLEScan = nullptr;
+BLEClient *pClient = nullptr;
 BLEAdvertisedDevice *pDevice = nullptr;
 uint16_t ppmInput[8];
-
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     void onResult(BLEAdvertisedDevice advertisedDevice) override {
@@ -26,21 +33,18 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     }
 };
 
-
 class MyClientCallback : public BLEClientCallbacks {
-    void onConnect(BLEClient *pClient) override {
+    void onConnect(BLEClient *) override {
         Serial.println("Client connected");
         digitalWrite(5, HIGH);
     }
 
-    void onDisconnect(BLEClient *pClient) override {
+    void onDisconnect(BLEClient *) override {
         Serial.println("Client disconnected");
         digitalWrite(5, LOW);
-        delete pDevice;
-        pDevice = nullptr;
+        currentState = BEFORE_DISCONNECT;
     }
 };
-
 
 void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
 //    Serial.print("Notify callback for characteristic ");
@@ -59,68 +63,71 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
         ppmInput[i] = MAX(MIN(ppmInput[i],2000),1000);
         Serial.printf("%d: %d\n", i, ppmInput[i]);
     }
-
 }
-
 
 void setup() {
     Serial.begin(115200);
-
     BLEDevice::init("");
-    pBLEScan = BLEDevice::getScan();
-    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
 
-    // active scan uses more power, but get results faster
-    pBLEScan->setActiveScan(true);
+    pBLEScan = BLEDevice::getScan();
+    pClient = BLEDevice::createClient();
+    pClient->setClientCallbacks(new MyClientCallback());
+
+    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+    pBLEScan->setActiveScan(true);  // active scan uses more power, but get results faster
     pBLEScan->setInterval(100);
     pBLEScan->setWindow(99);  // less or equal setInterval value
 }
 
-
-void connectToServer() {
+bool connect() {
     Serial.println("Connecting...");
-    BLEClient *pClient = BLEDevice::createClient();
-    pClient->setClientCallbacks(new MyClientCallback());
     pClient->connect(pDevice);
 
     BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
     if (pRemoteService == nullptr) {
         Serial.print("Failed to find service UUID: ");
         Serial.println(serviceUUID);
-        pClient->disconnect();
-        return;
+        return false;
     }
-
-    Serial.println(pRemoteService->toString().c_str());
 
     BLERemoteCharacteristic *pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
     if (pRemoteCharacteristic == nullptr) {
         Serial.print("Failed to find our characteristic UUID: ");
         Serial.println(charUUID);
-        pClient->disconnect();
-        return;
+        return false;
     }
 
-    if(pRemoteCharacteristic->canNotify()) {
-        pRemoteCharacteristic->registerForNotify(notifyCallback);
-    }
+    Serial.printf("canWrite: %d\n", pRemoteCharacteristic->canWrite());
+
+    return true;
 }
 
-
 void loop() {
-    if (pDevice == nullptr) {
-        Serial.println("Scanning...");
-        BLEScanResults foundDevices = pBLEScan->start(scanTime);
+    switch (currentState) {
+        case SCANNING:
+            Serial.println("Scanning...");
+            pBLEScan->start(scanTime);
+            // delete results from BLEScan buffer to release memory
+            pBLEScan->clearResults();
 
-        // delete results from BLEScan buffer to release memory
-        pBLEScan->clearResults();
+            if (pDevice != nullptr) {
+                std::string address = pDevice->getAddress().toString();
+                Serial.printf("Radio found! (%s)\n", address.c_str());
+                currentState = connect() ? CONNECTED : BEFORE_DISCONNECT;
+                delete pDevice;
+            }
+            Serial.println(esp_get_free_heap_size());
+            break;
 
-        if (pDevice != nullptr) {
-            Serial.println("Device found!");
-            Serial.println(pDevice->toString().c_str());
-            connectToServer();
-        }
+        case CONNECTED:
+            currentState = DISCONNECTED;
+            break;
+
+        case BEFORE_DISCONNECT:
+            pClient->disconnect();
+        case DISCONNECTED:
+            currentState = SCANNING;
+            delay(2000);
+            break;
     }
-
-    delay(2000);
 }

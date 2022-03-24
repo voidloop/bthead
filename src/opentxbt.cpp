@@ -1,5 +1,7 @@
 #include "opentxbt.h"
 
+/* From OpenTX 2.3.1 */
+
 constexpr uint8_t START_STOP = 0x7E;
 constexpr uint8_t BYTE_STUFF = 0x7D;
 constexpr uint8_t STUFF_MASK = 0x20;
@@ -7,8 +9,7 @@ constexpr uint8_t STUFF_MASK = 0x20;
 uint8_t buffer[BLUETOOTH_LINE_LENGTH + 1];
 uint8_t bufferIndex = 0;
 extern uint16_t ppmInput[8];
-
-/* From OpenTX 2.3.1 */
+uint8_t dataState = STATE_DATA_IDLE;
 
 void appendTrainerByte(uint8_t data) {
     if (bufferIndex < BLUETOOTH_LINE_LENGTH) {
@@ -29,8 +30,6 @@ void processTrainerFrame(const uint8_t *buf) {
 }
 
 void processTrainerByte(uint8_t data) {
-    static uint8_t dataState = STATE_DATA_IDLE;
-
     switch (dataState) {
         case STATE_DATA_START:
             if (data == START_STOP) {
