@@ -1,56 +1,73 @@
 #include <Arduino.h>
-#include <NimBLEDevice.h>
+#include <BLEDevice.h>
+#include <sys/param.h>
+
+#include "opentxbt.h"
 
 const int scanTime = 5; // seconds
-NimBLEScan *pBLEScan = nullptr;
-NimBLEAdvertisedDevice *pDevice = nullptr;
+const char *serviceUUID = "0000fff0-0000-1000-8000-00805f9b34fb";
+const char *charUUID = "0000fff6-0000-1000-8000-00805f9b34fb";
+
+BLEScan *pBLEScan = nullptr;
+BLEAdvertisedDevice *pDevice = nullptr;
+uint16_t ppmInput[8];
 
 
-class MyAdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
-    void onResult(NimBLEAdvertisedDevice *pAdvertisedDevice) override {
-        if (pAdvertisedDevice->haveServiceUUID()) {
-            const std::string name = pAdvertisedDevice->getName();
-            const std::string uuid = pAdvertisedDevice->getServiceUUID().toString();
-            if (uuid == "0xfff0" && name == "Hello") {
-                Serial.println(pAdvertisedDevice->toString().c_str());
-                pAdvertisedDevice->getScan()->stop();
-                pDevice = pAdvertisedDevice;
+class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
+    void onResult(BLEAdvertisedDevice advertisedDevice) override {
+        if (advertisedDevice.haveServiceUUID()) {
+            const std::string name = advertisedDevice.getName();
+            const std::string uuid = advertisedDevice.getServiceUUID().toString();
+            if (uuid == serviceUUID && name == "Hello") {
+                pDevice = new BLEAdvertisedDevice(advertisedDevice);
+                advertisedDevice.getScan()->stop();
             }
         }
     }
 };
 
-class MyClientCallback : public NimBLEClientCallbacks {
-    void onConnect(NimBLEClient *pClient) override {
+
+class MyClientCallback : public BLEClientCallbacks {
+    void onConnect(BLEClient *pClient) override {
         Serial.println("Client connected");
         digitalWrite(5, HIGH);
     }
 
-    void onDisconnect(NimBLEClient *pClient) override {
+    void onDisconnect(BLEClient *pClient) override {
         Serial.println("Client disconnected");
         digitalWrite(5, LOW);
+        delete pDevice;
         pDevice = nullptr;
     }
 };
 
 
-/** Notification / Indication receiving handler callback */
-void notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify){
-    std::string str = isNotify ? "Notification" : "Indication";
-    str += " from ";
-    /** NimBLEAddress and NimBLEUUID have std::string operators */
-    str += std::string(pRemoteCharacteristic->getRemoteService()->getClient()->getPeerAddress());
-    str += ": Service = " + std::string(pRemoteCharacteristic->getRemoteService()->getUUID());
-    str += ", Characteristic = " + std::string(pRemoteCharacteristic->getUUID());
-    str += ", Value = " + std::string((char*)pData, length);
-    Serial.println(str.c_str());
+void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
+//    Serial.print("Notify callback for characteristic ");
+//    Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
+//    Serial.print(" of data length ");
+//    Serial.println(length);
+//    Serial.print("data: ");
+//    Serial.println((char*)pData);
+
+    for (size_t i = 0; i< length; ++i) {
+        processTrainerByte(pData[i]);
+    }
+
+    for(int i=0;i<8;i++) {
+        // Limit channels to 1000 - 2000us
+        ppmInput[i] = MAX(MIN(ppmInput[i],2000),1000);
+        Serial.printf("%d: %d\n", i, ppmInput[i]);
+    }
+
 }
+
 
 void setup() {
     Serial.begin(115200);
 
-    NimBLEDevice::init("");
-    pBLEScan = NimBLEDevice::getScan();
+    BLEDevice::init("");
+    pBLEScan = BLEDevice::getScan();
     pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
 
     // active scan uses more power, but get results faster
@@ -59,37 +76,49 @@ void setup() {
     pBLEScan->setWindow(99);  // less or equal setInterval value
 }
 
+
+void connectToServer() {
+    Serial.println("Connecting...");
+    BLEClient *pClient = BLEDevice::createClient();
+    pClient->setClientCallbacks(new MyClientCallback());
+    pClient->connect(pDevice);
+
+    BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
+    if (pRemoteService == nullptr) {
+        Serial.print("Failed to find service UUID: ");
+        Serial.println(serviceUUID);
+        pClient->disconnect();
+        return;
+    }
+
+    Serial.println(pRemoteService->toString().c_str());
+
+    BLERemoteCharacteristic *pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
+    if (pRemoteCharacteristic == nullptr) {
+        Serial.print("Failed to find our characteristic UUID: ");
+        Serial.println(charUUID);
+        pClient->disconnect();
+        return;
+    }
+
+    if(pRemoteCharacteristic->canNotify()) {
+        pRemoteCharacteristic->registerForNotify(notifyCallback);
+    }
+}
+
+
 void loop() {
     if (pDevice == nullptr) {
         Serial.println("Scanning...");
-        NimBLEScanResults foundDevices = pBLEScan->start(scanTime);
+        BLEScanResults foundDevices = pBLEScan->start(scanTime);
+
+        // delete results from BLEScan buffer to release memory
+        pBLEScan->clearResults();
 
         if (pDevice != nullptr) {
-            Serial.println("Radio found!");
+            Serial.println("Device found!");
             Serial.println(pDevice->toString().c_str());
-
-            Serial.println("Connecting...");
-            NimBLEClient *pClient = NimBLEDevice::createClient();
-            pClient->setClientCallbacks(new MyClientCallback());
-            pClient->connect(pDevice);
-
-            if (pClient->isConnected()) {
-                NimBLERemoteService *pRemoteService = pClient->getService(pDevice->getServiceUUID());
-                Serial.println(pRemoteService->toString().c_str());
-
-                std::vector<NimBLERemoteCharacteristic *> *pCharacteristics = pRemoteService->getCharacteristics(true);
-                for (auto &pCharacteristic: *pCharacteristics) {
-                    Serial.println(pCharacteristic->toString().c_str());
-                    if (pCharacteristic->getUUID().toString() == "0xfff6") {
-                        pCharacteristic->subscribe(true, notifyCB);
-                        break;
-                    }
-                }
-
-            }
-        } else {
-            // delete results from BLEScan buffer to release memory
-            pBLEScan->clearResults();
+            connectToServer();
         }
     }
 
