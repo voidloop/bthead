@@ -1,35 +1,23 @@
-#ifndef OPENTXBT_H
-#define OPENTXBT_H
+#ifndef OPENTX_BT_H
+#define OPENTX_BT_H
 
 #include <Arduino.h>
 
-void processTrainerByte(uint8_t data);
+#define PPM_CENTER 1500
 
-//enum BluetoothStates {
-//#if defined(PCBX9E)
-//    BLUETOOTH_INIT,
-//    BLUETOOTH_WAIT_TTM,
-//    BLUETOOTH_WAIT_BAUDRATE_CHANGE,
-//#endif
-//    BLUETOOTH_STATE_OFF,
-//    BLUETOOTH_STATE_FACTORY_BAUDRATE_INIT,
-//    BLUETOOTH_STATE_BAUDRATE_SENT,
-//    BLUETOOTH_STATE_BAUDRATE_INIT,
-//    BLUETOOTH_STATE_NAME_SENT,
-//    BLUETOOTH_STATE_POWER_SENT,
-//    BLUETOOTH_STATE_ROLE_SENT,
-//    BLUETOOTH_STATE_IDLE,
-//    BLUETOOTH_STATE_DISCOVER_REQUESTED,
-//    BLUETOOTH_STATE_DISCOVER_SENT,
-//    BLUETOOTH_STATE_DISCOVER_START,
-//    BLUETOOTH_STATE_DISCOVER_END,
-//    BLUETOOTH_STATE_BIND_REQUESTED,
-//    BLUETOOTH_STATE_CONNECT_SENT,
-//    BLUETOOTH_STATE_CONNECTED,
-//    BLUETOOTH_STATE_DISCONNECTED,
-//    BLUETOOTH_STATE_CLEAR_REQUESTED,
-//    BLUETOOTH_STATE_FLASH_FIRMWARE
-//};
+#if defined(PPM_CENTER_ADJUSTABLE)
+    #define PPM_CH_CENTER(ch) (PPM_CENTER + limitAddress(ch)->ppmCenter)
+#else
+    #define PPM_CH_CENTER(ch) (PPM_CENTER)
+#endif
+
+void processTrainerByte(uint8_t data);
+void sendTrainer();
+
+template<class t>
+inline t limit(t mi, t x, t ma) {
+    return min(max(mi, x), ma);
+}
 
 enum {
     STATE_DATA_IDLE,

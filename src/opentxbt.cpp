@@ -6,10 +6,14 @@ constexpr uint8_t START_STOP = 0x7E;
 constexpr uint8_t BYTE_STUFF = 0x7D;
 constexpr uint8_t STUFF_MASK = 0x20;
 
+uint8_t crc = 0x00;
 uint8_t buffer[BLUETOOTH_LINE_LENGTH + 1];
 uint8_t bufferIndex = 0;
 extern uint16_t ppmInput[8];
+extern int16_t channelOutputs[8];
 uint8_t dataState = STATE_DATA_IDLE;
+
+extern void write(const uint8_t *data, uint8_t length);
 
 void appendTrainerByte(uint8_t data) {
     if (bufferIndex < BLUETOOTH_LINE_LENGTH) {
@@ -69,7 +73,7 @@ void processTrainerByte(uint8_t data) {
     }
 
     if (bufferIndex >= BLUETOOTH_PACKET_SIZE) {
-        uint8_t crc = 0x00;
+        crc = 0x00;
         for (int i = 0; i < 13; i++) {
             crc ^= buffer[i];
         }
@@ -80,4 +84,47 @@ void processTrainerByte(uint8_t data) {
         }
         dataState = STATE_DATA_IDLE;
     }
+}
+
+void pushByte(uint8_t byte) {
+    crc ^= byte;
+    if (byte == START_STOP || byte == BYTE_STUFF) {
+        buffer[bufferIndex++] = BYTE_STUFF;
+        byte ^= STUFF_MASK;
+    }
+    buffer[bufferIndex++] = byte;
+}
+
+
+void sendTrainer() {
+//    int16_t PPM_range = g_model.extendedLimits ? 640*2 : 512*2;
+    int16_t PPM_range = 512 * 2;
+
+    int firstCh = 0;
+    int lastCh = firstCh + 8;
+
+    uint8_t *cur = buffer;
+    bufferIndex = 0;
+    crc = 0x00;
+
+    buffer[bufferIndex++] = START_STOP; // start byte
+    pushByte(0x80); // trainer frame type?
+    for (int channel = firstCh; channel < lastCh; channel += 2, cur += 3) {
+        uint16_t channelValue1 =
+                PPM_CH_CENTER(channel) +
+                limit((int16_t) -PPM_range, channelOutputs[channel], (int16_t) PPM_range) / 2;
+
+        uint16_t channelValue2 =
+                PPM_CH_CENTER(channel + 1) +
+                limit((int16_t) -PPM_range, channelOutputs[channel + 1], (int16_t) PPM_range) / 2;
+
+        pushByte(channelValue1 & 0x00ff);
+        pushByte(((channelValue1 & 0x0f00) >> 4) + ((channelValue2 & 0x00f0) >> 4));
+        pushByte(((channelValue2 & 0x000f) << 4) + ((channelValue2 & 0x0f00) >> 8));
+    }
+    buffer[bufferIndex++] = crc;
+    buffer[bufferIndex++] = START_STOP; // end byte
+
+    write(buffer, bufferIndex);
+    bufferIndex = 0;
 }
