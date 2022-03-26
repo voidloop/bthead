@@ -1,6 +1,5 @@
-#include "opentxbt.h"
-
 /* From OpenTX 2.3.1 */
+#include "opentxbt.h"
 
 constexpr uint8_t START_STOP = 0x7E;
 constexpr uint8_t BYTE_STUFF = 0x7D;
@@ -9,10 +8,10 @@ constexpr uint8_t STUFF_MASK = 0x20;
 uint8_t crc = 0x00;
 uint8_t buffer[BLUETOOTH_LINE_LENGTH + 1];
 uint8_t bufferIndex = 0;
-extern uint16_t ppmInput[8];
-extern int16_t channelOutputs[8];
 uint8_t dataState = STATE_DATA_IDLE;
 
+extern uint16_t ppmInput[CHANNEL_AMOUNT];
+extern int16_t channelOutputs[CHANNEL_AMOUNT];
 extern void write(const uint8_t *data, uint8_t length);
 
 void appendTrainerByte(uint8_t data) {
@@ -26,7 +25,7 @@ void appendTrainerByte(uint8_t data) {
 }
 
 void processTrainerFrame(const uint8_t *buf) {
-    for (uint8_t channel = 0, i = 1; channel < 8; channel += 2, i += 3) {
+    for (uint8_t channel = 0, i = 1; channel < CHANNEL_AMOUNT; channel += 2, i += 3) {
         // +-500 != 512, but close enough.
         ppmInput[channel] = buf[i] + ((buf[i + 1] & 0xf0) << 4);
         ppmInput[channel + 1] = ((buf[i + 1] & 0x0f) << 4) + ((buf[i + 2] & 0xf0) >> 4) + ((buf[i + 2] & 0x0f) << 8);
@@ -95,13 +94,9 @@ void pushByte(uint8_t byte) {
     buffer[bufferIndex++] = byte;
 }
 
-
 void sendTrainer() {
-//    int16_t PPM_range = g_model.extendedLimits ? 640*2 : 512*2;
-    int16_t PPM_range = 512 * 2;
-
-    int firstCh = 0;
-    int lastCh = firstCh + 8;
+    const int firstCh = 0;
+    const int lastCh = firstCh + CHANNEL_AMOUNT;
 
     uint8_t *cur = buffer;
     bufferIndex = 0;
@@ -112,11 +107,11 @@ void sendTrainer() {
     for (int channel = firstCh; channel < lastCh; channel += 2, cur += 3) {
         uint16_t channelValue1 =
                 PPM_CH_CENTER(channel) +
-                limit((int16_t) -PPM_range, channelOutputs[channel], (int16_t) PPM_range) / 2;
+                limit((int16_t) -PPM_RANGE, channelOutputs[channel], (int16_t) PPM_RANGE) / 2;
 
         uint16_t channelValue2 =
                 PPM_CH_CENTER(channel + 1) +
-                limit((int16_t) -PPM_range, channelOutputs[channel + 1], (int16_t) PPM_range) / 2;
+                limit((int16_t) -PPM_RANGE, channelOutputs[channel + 1], (int16_t) PPM_RANGE) / 2;
 
         pushByte(channelValue1 & 0x00ff);
         pushByte(((channelValue1 & 0x0f00) >> 4) + ((channelValue2 & 0x00f0) >> 4));
