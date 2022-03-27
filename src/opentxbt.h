@@ -11,7 +11,8 @@
     #define PPM_CH_CENTER(ch) (PPM_CENTER)
 #endif
 
-constexpr uint8_t CHANNEL_AMOUNT = 8;
+#define CHANNEL_AMOUNT 8
+
 constexpr int16_t PPM_RANGE = 512 * 2;
 
 void processTrainerByte(uint8_t data);
