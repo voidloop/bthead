@@ -11,7 +11,8 @@ uint8_t bufferIndex = 0;
 uint8_t dataState = STATE_DATA_IDLE;
 
 extern uint16_t ppmInput[CHANNEL_AMOUNT];
-extern int16_t channelOutputs[CHANNEL_AMOUNT];
+extern uint16_t ppmOutput[CHANNEL_AMOUNT];
+
 extern void write(const uint8_t *data, uint8_t length);
 
 void appendTrainerByte(uint8_t data) {
@@ -95,24 +96,15 @@ void pushByte(uint8_t byte) {
 }
 
 void sendTrainer() {
-    const int firstCh = 0;
-    const int lastCh = firstCh + CHANNEL_AMOUNT;
-
     uint8_t *cur = buffer;
     bufferIndex = 0;
     crc = 0x00;
 
     buffer[bufferIndex++] = START_STOP; // start byte
     pushByte(0x80); // trainer frame type?
-    for (int channel = firstCh; channel < lastCh; channel += 2, cur += 3) {
-        uint16_t channelValue1 =
-                PPM_CH_CENTER(channel) +
-                limit((int16_t) -PPM_RANGE, channelOutputs[channel], (int16_t) PPM_RANGE) / 2;
-
-        uint16_t channelValue2 =
-                PPM_CH_CENTER(channel + 1) +
-                limit((int16_t) -PPM_RANGE, channelOutputs[channel + 1], (int16_t) PPM_RANGE) / 2;
-
+    for (int channel = 0; channel < CHANNEL_AMOUNT; channel += 2, cur += 3) {
+        const uint16_t channelValue1 = ppmOutput[channel];
+        const uint16_t channelValue2 = ppmOutput[channel + 1];
         pushByte(channelValue1 & 0x00ff);
         pushByte(((channelValue1 & 0x0f00) >> 4) + ((channelValue2 & 0x00f0) >> 4));
         pushByte(((channelValue2 & 0x000f) << 4) + ((channelValue2 & 0x0f00) >> 8));

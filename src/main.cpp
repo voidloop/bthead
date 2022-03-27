@@ -14,7 +14,7 @@ BLEServer *pServer = nullptr;
 BLECharacteristic *pCharacteristic = nullptr;
 BLEService *pService = nullptr;
 PPMReader *ppmReader = nullptr;
-int16_t channelOutputs[CHANNEL_AMOUNT];
+uint16_t ppmOutput[CHANNEL_AMOUNT];
 
 void write(const uint8_t *data, uint8_t length) {
     pCharacteristic->setValue((uint8_t *) data, length);
@@ -50,6 +50,22 @@ class MyServerCallbacks : public BLEServerCallbacks {
     }
 };
 
+void printChannelOutputs() {
+    for (uint8_t ch = 1; ch <= CHANNEL_AMOUNT; ++ch) {
+        if (ch != 1) Serial.print(' ');
+        Serial.printf("%4d", ppmOutput[ch - 1]);
+        if (ch == CHANNEL_AMOUNT) Serial.println();
+    }
+}
+
+inline void updateChannelOutputs() {
+    for (int ch = 1; ch <= CHANNEL_AMOUNT; ++ch) {
+        const uint16_t ppmValue = ppmReader->latestValidChannelValue(ch, PPM_CENTER);
+        ppmOutput[ch - 1] = (uint16_t) map(ppmValue, ppmReader->minChannelValue, ppmReader->maxChannelValue,
+                                           MIN_PPM_OUTPUT, MAX_PPM_OUTPUT);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     Serial.println("Starting...");
@@ -58,9 +74,10 @@ void setup() {
     pinMode(INTERRUPT_PIN, INPUT);
 
     ppmReader = new PPMReader(INTERRUPT_PIN, CHANNEL_AMOUNT);
-    runBlinkTask();
-
     BLEDevice::init("Hello");
+
+    delay(1000);
+    updateChannelOutputs();
 
     pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());
@@ -79,24 +96,13 @@ void setup() {
     pAdvertising->setMinPreferred(0x12);
     BLEDevice::startAdvertising();
     Serial.println("Server started, waiting radio...");
+    runBlinkTask();
 }
 
 void loop() {
-    for (uint8_t ch = 1; ch <= CHANNEL_AMOUNT; ++ch) {
-        const uint16_t ppmValue = ppmReader->latestValidChannelValue(ch, PPM_CENTER);
-        channelOutputs[ch - 1] = (int16_t) map(
-                ppmValue,
-                ppmReader->minChannelValue, ppmReader->maxChannelValue,
-                -PPM_RANGE, PPM_RANGE);
-
-        if (ch != 1) Serial.print(' ');
-        Serial.printf("%4d", ppmValue);
-        if (ch == CHANNEL_AMOUNT) Serial.println();
-    }
-
+    updateChannelOutputs();
     if (deviceConnected) {
         sendTrainer();
     }
-
-    delay(50);
+    delay(5);
 }
