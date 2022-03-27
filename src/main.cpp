@@ -24,9 +24,9 @@ void write(const uint8_t *data, uint8_t length) {
 void blinkTask(void *) {
     while (!deviceConnected) {
         digitalWrite(LED_PIN, LOW);
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(100));
         digitalWrite(LED_PIN, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(1900));
     }
     digitalWrite(LED_PIN, LOW);
     vTaskDelete(nullptr);
